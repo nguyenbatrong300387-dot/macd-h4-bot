@@ -1,30 +1,41 @@
-import telebot
-import requests
-import time
+import os, requests
 
-TOKEN = "8494567101:AAEBEfXhkf2_qNvctzavIM8M85VvK5j3fwc"
-bot = telebot.TeleBot(TOKEN)
+# Đọc từ GitHub Secrets (ENV)
+TOKEN   = os.getenv("TELEGRAM_BOT_TOKEN") or os.getenv("TOKEN")
+CHAT_ID = os.getenv("CHAT_ID")
+API_KEY = os.getenv("TWELVE_DATA_API_KEY") or os.getenv("API_KEY")
 
-API_KEY = "2428bdb1c5744a8da1c1ca416c6a823e"
-SYMBOL = "EUR/USD"
+SYMBOL   = "EUR/USD"
 INTERVAL = "4h"
 
 def get_macd():
-    url = f"https://api.twelvedata.com/macd?symbol={SYMBOL}&interval={INTERVAL}&apikey={API_KEY}"
-    data = requests.get(url).json()
-    return float(data["macd"]["macd"]), float(data["macd"]["signal"])
+    url = (
+        "https://api.twelvedata.com/macd"
+        f"?symbol={SYMBOL}&interval={INTERVAL}&apikey={API_KEY}&format=JSON"
+    )
+    data = requests.get(url, timeout=20).json()
+    # Twelve Data trả về {"values":[{"datetime":...,"macd":"...","signal":"..."}]}
+    if "values" not in data:
+        raise RuntimeError(f"Twelve Data error: {data}")
+    v = data["values"][0]
+    return float(v["macd"]), float(v["signal"])
 
-chat_id = 2143619263
+def send(msg: str):
+    requests.post(
+        f"https://api.telegram.org/bot{TOKEN}/sendMessage",
+        json={"chat_id": CHAT_ID, "parse_mode": "HTML", "text": msg},
+        timeout=20
+    )
 
-while True:
+def main():
     macd, signal = get_macd()
-    
-    if macd > signal:
-        msg = f"📈 MACD Bullish Cross H4\n{SYMBOL}"
-        bot.send_message(chat_id, msg)
+    status = "📈 BULLISH" if macd > signal else "📉 BEARISH"
+    send(
+        f"<b>MACD H4 Alert</b>\n"
+        f"{SYMBOL}\n"
+        f"Status: {status}\n"
+        f"MACD={macd:.5f} | Signal={signal:.5f}"
+    )
 
-    if macd < signal:
-        msg = f"📉 MACD Bearish Cross H4\n{SYMBOL}"
-        bot.send_message(chat_id, msg)
-
-    time.sleep(60)
+if __name__ == "__main__":
+    main()
